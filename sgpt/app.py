@@ -16,6 +16,11 @@ from sgpt.handlers.default_handler import DefaultHandler
 from sgpt.handlers.repl_handler import ReplHandler
 from sgpt.llm_functions.init_functions import install_functions as inst_funcs
 from sgpt.role import DefaultRoles, SystemRole
+from sgpt.shell_safety import (
+    analyze_shell_command,
+    confirm_shell_execution,
+    display_shell_safety_report,
+)
 from sgpt.utils import (
     get_edited_prompt,
     get_sgpt_version,
@@ -60,6 +65,12 @@ def main(
     interaction: bool = typer.Option(
         cfg.get("SHELL_INTERACTION") == "true",
         help="Interactive mode for --shell option.",
+        rich_help_panel="Assistance Options",
+    ),
+    shell_safety: bool = typer.Option(
+        cfg.get("SHELL_SAFETY") == "true",
+        "--shell-safety/--no-shell-safety",
+        help="Run a local safety check before executing generated shell commands.",
         rich_help_panel="Assistance Options",
     ),
     describe_shell: bool = typer.Option(
@@ -210,7 +221,7 @@ def main(
 
     if repl:
         # Will be in infinite loop here until user exits with Ctrl+C.
-        ReplHandler(repl, role_class, md).handle(
+        ReplHandler(repl, role_class, md, shell_safety).handle(
             init_prompt=prompt,
             model=model,
             temperature=temperature,
@@ -238,9 +249,15 @@ def main(
             functions=function_schemas,
         )
 
-    session: PromptSession[str] = PromptSession()
+    session: PromptSession[str] | None = None
+    shell_report = analyze_shell_command(full_completion) if shell and shell_safety else None
+    shell_report_displayed = False
 
     while shell and interaction:
+        if shell_report and shell_report.has_issues and not shell_report_displayed:
+            display_shell_safety_report(shell_report)
+            shell_report_displayed = True
+
         option = typer.prompt(
             text="[E]xecute, [M]odify, [D]escribe, [A]bort",
             type=Choice(("e", "m", "d", "a", "y"), case_sensitive=False),
@@ -251,9 +268,16 @@ def main(
 
         if option in ("e", "y"):
             # "y" option is for keeping compatibility with old version.
+            if shell_report and shell_report.requires_confirmation:
+                if not confirm_shell_execution(shell_report):
+                    continue
             run_command(full_completion)
         elif option == "m":
+            if session is None:
+                session = PromptSession()
             full_completion = session.prompt("", default=full_completion)
+            shell_report = analyze_shell_command(full_completion) if shell_safety else None
+            shell_report_displayed = False
             continue
         elif option == "d":
             DefaultHandler(DefaultRoles.DESCRIBE_SHELL.get_role(), md).handle(

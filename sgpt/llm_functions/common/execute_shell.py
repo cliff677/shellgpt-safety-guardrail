@@ -3,6 +3,12 @@ from typing import Any, Dict
 
 from pydantic import BaseModel, Field
 
+from sgpt.config import cfg
+from sgpt.shell_safety import (
+    analyze_shell_command,
+    blocked_shell_execution_message,
+)
+
 
 class Function(BaseModel):
     """
@@ -17,6 +23,13 @@ class Function(BaseModel):
 
     @classmethod
     def execute(cls, shell_command: str) -> str:
+        shell_report = analyze_shell_command(shell_command)
+        if (
+            shell_report.is_high_risk
+            and cfg.get("ALLOW_HIGH_RISK_SHELL_FUNCTIONS") != "true"
+        ):
+            return blocked_shell_execution_message(shell_report)
+
         process = subprocess.Popen(
             shell_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
         )

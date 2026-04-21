@@ -5,14 +5,26 @@ from rich import print as rich_print
 from rich.rule import Rule
 
 from ..role import DefaultRoles, SystemRole
+from ..shell_safety import (
+    analyze_shell_command,
+    confirm_shell_execution,
+    display_shell_safety_report,
+)
 from ..utils import run_command
 from .chat_handler import ChatHandler
 from .default_handler import DefaultHandler
 
 
 class ReplHandler(ChatHandler):
-    def __init__(self, chat_id: str, role: SystemRole, markdown: bool) -> None:
+    def __init__(
+        self,
+        chat_id: str,
+        role: SystemRole,
+        markdown: bool,
+        shell_safety: bool,
+    ) -> None:
         super().__init__(chat_id, role, markdown)
+        self.shell_safety = shell_safety
 
     @classmethod
     def _get_multiline_input(cls) -> str:
@@ -55,6 +67,18 @@ class ReplHandler(ChatHandler):
                 init_prompt = ""
             if self.role.name == DefaultRoles.SHELL.value and prompt == "e":
                 typer.echo()
+                shell_report = (
+                    analyze_shell_command(full_completion)
+                    if self.shell_safety
+                    else None
+                )
+                if shell_report and shell_report.has_issues:
+                    display_shell_safety_report(shell_report)
+                if shell_report and shell_report.requires_confirmation:
+                    if not confirm_shell_execution(shell_report):
+                        typer.echo()
+                        rich_print(Rule(style="bold magenta"))
+                        continue
                 run_command(full_completion)
                 typer.echo()
                 rich_print(Rule(style="bold magenta"))
