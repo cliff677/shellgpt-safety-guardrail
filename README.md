@@ -203,6 +203,10 @@ sgpt -d "tar -xzvf archive.tar.gz"
 sgpt -c "write a Python function to calculate Fibonacci numbers"
 ```
 
+## Demo Video
+
+[Watch the demo video](https://github.com/cliff677/shellgpt-safety-guardrail/releases/tag/demo-v1)
+
 ## Demo Script
 
 Recommended commands for a short demo video:
